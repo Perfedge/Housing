@@ -5,6 +5,30 @@ const libraryLoads=new Map();
 async function loadLibrary(name,globalName){if(window[globalName])return window[globalName];if(!libraryLoads.has(name))libraryLoads.set(name,new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='vendor/'+name;script.onload=()=>window[globalName]?resolve(window[globalName]):reject(Error('Export library did not initialize.'));script.onerror=()=>{libraryLoads.delete(name);script.remove();reject(Error('Download tools could not load. Check your connection and try again.'))};document.head.append(script)}));return libraryLoads.get(name);}
 function signedMoney(n){return(n<0?'-':'')+usd(n);}
 function resultText(value,unit){return unit==='USD'?signedMoney(value):unit==='%'?value.toFixed(1)+'%':fmt(value)+' '+unit;}
+// One scenario snapshot supplies the same financial graphic to both download formats.
+function financialGraphic(inputs){
+ const r=calculate(inputs),canvas=document.createElement('canvas');canvas.width=2000;canvas.height=1500;
+ const ctx=canvas.getContext('2d');if(!ctx)throw Error('The financial graphic could not be generated.');ctx.scale(2,2);
+ const color={ink:'#173f3a',muted:'#52665f',line:'#dce7e1',market:'#769abb',affordable:'#3c9085',subsidy:'#d6a044'};
+ ctx.fillStyle='#ffffff';ctx.fillRect(0,0,1000,750);
+ function label(text,x,y,size=20,fill=color.ink,align='left',bold=false){ctx.fillStyle=fill;ctx.font=(bold?'600 ':'')+size+'px Arial, sans-serif';ctx.textAlign=align;ctx.fillText(text,x,y)}
+ label('Can the plan pay for itself?',38,53,30,color.ink,'left',true);
+ label('Illustrative one-time project costs and funding',38,85,17,color.muted);
+ const rows=[['Construction and development',r.construction],['Land acquisition',r.landCost],['Total development cost',r.totalCost],['Market-rate revenue',r.marketRevenue],['Affordable housing revenue',r.affordableRevenue],['Public subsidy',r.publicSubsidy],[r.gap>=0?'Estimated funding gap':'Estimated surplus',Math.abs(r.gap)]];
+ rows.forEach(([name,value],i)=>{const y=126+i*39;const bold=i===2||i===6;label(name,38,y,20,color.ink,'left',bold);label(usd(value),962,y,20,i===6&&r.gap>0?'#ae402f':color.ink,'right',bold);ctx.fillStyle=color.line;ctx.fillRect(38,y+11,924,1)});
+ label('Sources relative to total cost',38,425,23,color.ink,'left',true);
+ const sources=r.marketRevenue+r.affordableRevenue+r.publicSubsidy,scale=Math.max(1,r.totalCost,sources),barX=230,barWidth=732;
+ label('Total cost',38,467,18);ctx.fillStyle='#e5ece8';ctx.fillRect(barX,449,barWidth,26);ctx.fillStyle=color.ink;ctx.fillRect(barX,449,barWidth*r.totalCost/scale,26);
+ label('Funding sources',38,513,18);ctx.fillStyle='#e5ece8';ctx.fillRect(barX,495,barWidth,26);let x=barX;
+ for(const [value,fill]of [[r.marketRevenue,color.market],[r.affordableRevenue,color.affordable],[r.publicSubsidy,color.subsidy]]){const w=barWidth*value/scale;ctx.fillStyle=fill;ctx.fillRect(x,495,w,26);x+=w}
+ ctx.strokeStyle=color.ink;ctx.lineWidth=2;const costX=barX+barWidth*r.totalCost/scale;ctx.beginPath();ctx.moveTo(costX,489);ctx.lineTo(costX,527);ctx.stroke();
+ for(const [name,fill,x]of [['Market revenue',color.market,38],['Affordable revenue',color.affordable,320],['Subsidy',color.subsidy,646]]){ctx.fillStyle=fill;ctx.fillRect(x,552,16,16);label(name,x+25,566,17,color.muted)}
+ label('Both bars use the same dollar scale. The vertical marker shows total cost.',38,610,17,color.muted);
+ label(r.gap>0?'A gap means modeled costs exceed revenue and public subsidy.':'A surplus means modeled revenue and public subsidy exceed costs.',38,646,18,r.gap>0?'#ae402f':color.ink);
+ label('A modeled balance does not establish real project feasibility.',38,678,17,color.muted);
+ label('Housing student lab | All financial inputs and outcomes are illustrative.',38,721,15,color.muted);
+ return canvas.toDataURL('image/png');
+}
 async function makePdf(doc){
  const {jsPDF}=await loadLibrary('jspdf.umd.min.js','jspdf');const pdf=new jsPDF({unit:'mm',format:'a4'});let y=31,page=1;const width=174;
  const fontResponse=await fetch('fonts/NotoSans-Regular.ttf');if(!fontResponse.ok)throw Error('PDF font could not load. Please try again.');const fontBytes=new Uint8Array(await fontResponse.arrayBuffer());let fontBinary='';for(let i=0;i<fontBytes.length;i+=8192)fontBinary+=String.fromCharCode(...fontBytes.subarray(i,i+8192));pdf.addFileToVFS('NotoSans-Regular.ttf',btoa(fontBinary));pdf.addFont('NotoSans-Regular.ttf','NotoSans','normal');pdf.setFont('NotoSans');
@@ -17,6 +41,7 @@ async function makePdf(doc){
  header();text('Student planning brief',22,[23,63,58]);text(doc.name,13);text('Prepared '+new Date().toLocaleDateString('en-US')+' | Illustrative classroom scenario',9);
  heading('Your housing choices');for(const c of CONFIG)row(c.label,c.money?usd(doc.inputs[c.key]):doc.inputs[c.key]+c.unit);
  heading('Scenario results');const r=calculate(doc.inputs);for(const [label,key,unit]of RESULTS)row(label,resultText(r[key],unit));
+ space(132);pdf.addImage(financialGraphic(doc.inputs),'PNG',24,y,162,121.5);y+=129;
  if(doc.baseline){heading('Compared with pinned baseline');const b=calculate(doc.baseline);for(const [label,key,unit]of RESULTS.slice(0,3).concat(RESULTS.slice(8,10)))row(label,resultText(b[key],unit)+' -> '+resultText(r[key],unit));}
  heading('Your recommendation');text(doc.reflection||'No reflection entered.');heading('Assumptions and limitations');text(LIMITATIONS,9);text('Source: Housing student lab model. These are modeled outcomes, not forecasts or project feasibility findings.',9);
  for(let i=1;i<=page;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(90,105,95);pdf.text('Housing | Student planning lab',18,289);pdf.text(i+' / '+page,192,289,{align:'right'})}
@@ -37,6 +62,9 @@ async function makeWorkbook(doc,plans){
  noteRow+=2;sh.mergeCells('A'+noteRow+':B'+noteRow);sh.getCell('A'+noteRow).value='MODEL SOURCE AND LIMITATIONS';sh.getCell('A'+noteRow).font={bold:true};noteRow++;sh.mergeCells('A'+noteRow+':B'+noteRow);sh.getCell('A'+noteRow).value='Source: Housing student lab model. '+LIMITATIONS;sh.getCell('A'+noteRow).alignment={wrapText:true,vertical:'top'};sh.getRow(noteRow).height=130;
  sh.eachRow(row=>row.eachCell(cell=>{cell.font={name:'Calibri',size:11,...cell.font};if(!cell.alignment)cell.alignment={vertical:'middle'}}));sh.pageSetup={paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0};return sh;}
  sheetFor('Current plan',doc);if(doc.baseline)sheetFor('Pinned baseline',{name:'Pinned baseline',inputs:doc.baseline,reflection:''});
+ const graphicSheet=wb.addWorksheet('Financial graphic');graphicSheet.columns=Array.from({length:10},()=>({width:14}));
+ const graphicId=wb.addImage({base64:financialGraphic(doc.inputs),extension:'png'});graphicSheet.addImage(graphicId,{tl:{col:0,row:0},ext:{width:900,height:675},editAs:'absolute'});
+ graphicSheet.mergeCells('A36:J38');graphicSheet.getCell('A36').value='Current plan: '+doc.name+'\nThis graphic is a snapshot at export. Editing workbook inputs updates formulas, but does not redraw this image. Export again from Housing for an updated graphic.';graphicSheet.getCell('A36').alignment={wrapText:true,vertical:'top'};graphicSheet.getCell('A36').font={name:'Calibri',size:11,color:{argb:'FF52665F'}};graphicSheet.getRow(36).height=58;graphicSheet.pageSetup={paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:1,printArea:'A1:J39'};
  const sh=wb.addWorksheet('Saved plans');sh.columns=[{header:'Scenario',key:'name',width:28},...CONFIG.map(c=>({header:c.label+(c.money?' (USD)':''),key:c.key,width:24})),{header:'Total homes',key:'units',width:18},{header:'Affordable homes',key:'affordable',width:22},{header:'Funding gap (negative = surplus, USD)',key:'gap',width:32},{header:'Public subsidy (USD)',key:'publicSubsidy',width:24},{header:'Reflection',key:'reflection',width:65}];sh.views=[{state:'frozen',ySplit:1,xSplit:1}];sh.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}};sh.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF173F3A'}};sh.getRow(1).alignment={wrapText:true};sh.getRow(1).height=42;
  for(const plan of plans){const r=calculate(plan.inputs);const row=sh.addRow({name:plan.name,...plan.inputs,aff:plan.inputs.aff/100,units:r.units,affordable:r.affordable,gap:r.gap,publicSubsidy:r.publicSubsidy,reflection:plan.reflection||''});row.alignment={wrapText:true,vertical:'top'};row.height=45;CONFIG.forEach((c,i)=>row.getCell(i+2).numFmt=c.money?money:c.key==='aff'?'0%':'#,##0');row.getCell(12).numFmt=money;row.getCell(13).numFmt=money;}
  sh.autoFilter={from:{row:1,column:1},to:{row:Math.max(1,plans.length+1),column:14}};if(!plans.length)sh.getCell('A2').value='No saved plans in this account.';
