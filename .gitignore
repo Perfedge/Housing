@@ -1,2 +1,11 @@
 .DS_Store
 *.zip
+node_modules/
+.env
+.env.*
+!.env.example
+.vercel/
+public/vendor/
+housing-live.png
+output/
+.local-data/

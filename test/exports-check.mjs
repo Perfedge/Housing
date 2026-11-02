@@ -1,0 +1,13 @@
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {jsPDF} from 'jspdf';
+import ExcelJS from 'exceljs';
+import {CONFIG,DEFAULT,calculate} from '../server/model.mjs';
+const source=await readFile('public/exports.js','utf8');
+const context=vm.createContext({window:{jspdf:{jsPDF},ExcelJS},document:{},CONFIG,calculate,Uint8Array,btoa,console,Map,Date,fetch:async()=>({ok:true,arrayBuffer:async()=>{const b=await readFile('public/fonts/NotoSans-Regular.ttf');return b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength)}}),$:()=>({}),fmt:n=>Math.round(n).toLocaleString('en-US'),usd:n=>'$'+Math.abs(n).toLocaleString('en-US',{maximumFractionDigits:0}),...{sample:{name:'Classroom comparison',inputs:DEFAULT,baseline:{...DEFAULT,density:20},reflection:'We prioritize affordable homes. Our tradeoff is a taller building. We need evidence about infrastructure. Café residents can compare plans.'}}});
+vm.runInContext(source,context);await mkdir('output/qa',{recursive:true});
+const pdf=await vm.runInContext('makePdf(sample)',context);await writeFile('output/qa/housing-brief.pdf',Buffer.from(pdf.output('arraybuffer')));
+const wb=await vm.runInContext('makeWorkbook(sample,[sample])',context);const bytes=await wb.xlsx.writeBuffer();await writeFile('output/qa/housing-plans.xlsx',Buffer.from(bytes));
+const check=new ExcelJS.Workbook();await check.xlsx.load(bytes);assert.equal(check.worksheets.length,3);assert.equal(check.getWorksheet('Current plan').getCell('B20').result,540);assert.equal(check.getWorksheet('Current plan').getCell('B29').result,-75900000);assert.equal(check.getWorksheet('Pinned baseline').getCell('B20').result,240);assert.equal(check.getWorksheet('Saved plans').getCell('D2').value,.3);assert.equal(typeof check.getWorksheet('Saved plans').getCell('E2').value,'number');assert.match(check.getWorksheet('Current plan').getCell('B29').formula,/B25-B26-B27-B28/);assert.ok(pdf.getNumberOfPages()>=2);
+console.log('PASS: PDF created; Excel reopens with 3 sheets, numeric inputs, formulas, cached results, and saved scenario data.');
