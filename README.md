@@ -4,6 +4,9 @@ A standalone Healdsburg housing planning app for high school students, now prepa
 
 ## Features
 
+- Housing Need Estimator at `/need-estimator.html`: a no-login student tool covering 2026–2040. Includes occupied households and additional unit gaps, separate household-growth and historical workforce-policy methods, five income bands, rental/ownership allocations, five building forms, HCD 2026 size-specific budget examples, annual results, local scenario saving, JSON backup/import, CSV and browser print/PDF.
+- Sources and limitations are displayed in the estimator. ACS 2020–2024 households are a 2026 proxy; 5,138 stock is an unverified prior-work proxy. Historical EPS income shares and workforce inputs are labeled. Growth, availability, tenure by income, building mix and financing are assumptions. RHNA and cost burden are separate comparison measures. Pro forma Washington market data are not treated as Healdsburg market observations.
+
 - Username or email sign-in, account creation, sign-out, and password changes.
 - Password reset links sent by email, expiring after 30 minutes and consumed once. Resetting invalidates all sessions. Passwords use salted scrypt; session cookies are HttpOnly, SameSite=Lax, and Secure in production. Login/reset endpoints use persistent rate limits.
 - Account-owned saved scenarios, including inputs, reflection, and pinned baseline. The server checks ownership for every request.
